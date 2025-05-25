@@ -212,3 +212,144 @@ The answers to these questions will guide you toward the right architecture.
 
 
 
+Locality-Sensitive Hashing:
+attention mechansim generally is o(n^2) which means increasing the 
+sequence length twice inceaseses the compotional complexity 4 times?
+
+For a sequence of length n, the model computes an n × n attention matrix (each token attends to every other token).
+
+So, doubling the sequence length from n to 2n results in the attention matrix going from n² to (2n)² = 4n².
+
+
+doubling sequence length → 4x computational cost in vanilla attention.
+
+But there are methods to improve the attention. 
+
+generally to make attention efficient, we would look for ways where we would reduce the 
+number of calculations. meaning we should not compute attention number of every token with every
+token but we should be clever to do it for tokens where its necessary and important.
+and do not do it when it does not make sense or is redundant or 
+we can use some heristics to know in advance the values instead of calculating.
+
+One of the final steps in attenion is softmax(QKᵀ). This should be done for all tokens in normal attention. meaning every query q in Q is compared/attention is computed for every key k in K.
+
+LSH Attention (LSH (Locality-Sensitive Hashing)): reformer, instead of doing softmax(QKᵀ) for every q and k, it 
+only does it for a subset. here is how
+
+1. creates groups/buckets of similar q and k. if any q and k are similar, they are assigned
+to the same bucket.
+2. the attention is computed by similar buckets only rather than globally.
+
+As we know that softmax amplifies big values and supresses small values. 
+
+we have softmax(QKᵀ), --> QKᵀ means taking a dot product between the two.
+
+dot product is cos--cos(o) = 1 and cos (90) = 0 and cos (180) = -1  only for unit vectors
+
+if QK are far away (dissimilar), that means angle is >0 meanining 
+their dot product will be near 0.
+
+if QK are closer or similar, their dot product will be near 1. 
+
+dot product act like similarity score.
+
+so in LSH (Locality-Sensitive Hashing), there is no point 
+doing calculations for dissimilar QK, because their dot product will be ~0 or even negative
+and when we apply softmax to 0. softmax will make the smaller value even more smaller.
+so there is not point in calculation attention for dissimilar QK. 
+→ It contributes almost nothing to the final attention output.
+
+For similar ones, QK will be close to 1. softmax will make that value even higher.
+If Q ⋅ K is large (say 10 or more),
+→ e^{Q ⋅ K} becomes a very big number
+→ softmax turns it into a value close to 1, dominating the result. we need to compute only these.
+
+What LSH Does:
+Keeps only the similar Q-K pairs (likely to have large dot products)
+Skips the rest, saving memory and compute
+Softmax magnifies the difference between big and small scores.
+LSH avoids computing the small ones in the first place.
+softmax has exponential in its formula as below.
+softmax(q.k_j) = e^q.k_j/sigma(e^q.k_j)
+LSH brings the 0(n^2) to O(nlogn)
+
+It should be noted that goal is to avoid 0(n^2) in attention matrix calculation.
+
+LHS is doing it by creating buckets of similar QK and only computing attention matrix for similar
+QK.
+
+But there is another method (Local attention or Long former) which works towards the same goal 
+Long Former has few parts.
+
+each token attends to tokens in its neighbourhood and not all other tokens.
+so this is called local attention.
+
+
+LONGFORMER is a combination of local plus global attention.
+
+local attention bring the O(n²) down to O(n) because each token attends to just a few others.
+
+but then how to see more than local?
+
+well, you can apply local attention to each layer in neural network,
+but then in each other layer, slide the window a bit.
+this when you stack all the layers, you are covering global context to a good extent,
+
+say in layer 1 of NN, Token 5 attends to [3, 4, 5, 6, 7]
+
+then in layer 2 Token 5 now attends to [4, 5, 6, 7, 8]
+thus slight movement of attention window.
+Even though each layer is local, The stacked layers let each token indirectly "see" faraway tokens.
+
+This is just like a CNN — where:Each filter has a small receptive field, But deeper layers cover a larger area of the input image.
+
+But this limits the application of applying longformer to tasks like classification 
+and QnA. Because we need to understand full context for these tasks, and 
+lets say in classification, the [CLS] token should have a full context/info,
+then longformer let some special tokens to attend to all tokens like [CLS]
+so in Longerformer, [CLS] acts like a global summary hub. Helps with aggregation, classification, or decision-making.
+
+| Concept          | What's happening                                                          |
+| ---------------- | ------------------------------------------------------------------------- |
+| Local attention  | Each token only looks at nearby tokens (fast, cheap).                     |
+| Stacked layers   | Info spreads across sequence gradually (like CNNs).                       |
+| Global attention | A few important tokens get access to all others (smart shortcut).         |
+| Benefit          | Full sentence understanding with **low cost** and **structured control**. |
+
+
+| Feature               | **Longformer**                      | **Reformer (LSH)**                 |
+| --------------------- | ----------------------------------- | ---------------------------------- |
+| Attention type        | Local (fixed) + global (few tokens) | Similarity-based buckets (dynamic) |
+| Computation cost      | O(n)                                | O(n log n)                         |
+| Token grouping method | By position (fixed windows)         | By hash of vector similarity       |
+| Global context access | Yes, for selected tokens            | Indirect (via hash buckets)        |
+| Best for              | NLP tasks with known structure      | Long sequences, flexible attention |
+| Deterministic?        | Yes                                 | No (hash is probabilistic)         |
+
+
+
+
+When input size n doubles:
+
+| Complexity     | Output (work) increases by |
+| -------------- | -------------------------- |
+| **O(n)**       | \~2×                       |
+| **O(n²)**      | \~4×                       |
+| **O(n log n)** | **Slightly more than 2×**  |
+
+
+
+Axial Encoding:
+Now lets talk a bit about axial encodings.
+in Reformer, axial encoding is used for positional embeddings.
+Positional encoding E is a matrix of size lxd 
+l is the sequence length and d is the dimension of the hidden state.
+the issue arises for long sequences, this matrix can become huge.
+in order to solve this, axial encoding does the following.
+
+it divides the big l and d into smaller l1,l2---ln and d1,d2---dn such that
+l1xl2xln=l
+d1xd2xdn=d
+
+Then you cancatenate the embeddings of these smaller vectors.
+
