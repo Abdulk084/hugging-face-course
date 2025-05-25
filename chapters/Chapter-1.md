@@ -39,13 +39,12 @@ the above setup give us hidden states are then converted to logits using some la
 
 The language head or task head performs linear transformation to the hidden states to give us logits. Then next token in the sequence is 
 
-# Logits (raw scores)
+Logits (raw scores)
 logits = language_head(hidden_states)  # Shape: [batch_size, seq_len, vocab_size]
 
-# Convert to probabilities
+
 probabilities = torch.softmax(logits, dim=-1)
 
-# Projects hidden_size to vocabulary_size
 language_head = nn.Linear(hidden_size, vocab_size) # language head is a linear layer typically
 logits = language_head(hidden_states[:, -1, :])  # Last token's hidden state
 
@@ -338,7 +337,6 @@ When input size n doubles:
 | **O(n log n)** | **Slightly more than 2×**  |
 
 
-
 Axial Encoding:
 Now lets talk a bit about axial encodings.
 in Reformer, axial encoding is used for positional embeddings.
@@ -352,4 +350,197 @@ l1xl2xln=l
 d1xd2xdn=d
 
 Then you cancatenate the embeddings of these smaller vectors.
+
+----------------------------------------------------------------
+
+In LLM inference, there are two main points/stage to consider.
+prefill and decode. Both of prefill and decode work together in inference.
+
+The Prefill Phase:
+It is like a preparation phase, you haven't started cooking, but you are assembling
+all the ingredients and cutting stuff for cooking.
+
+1. it converts the input sequence (prompt) into tokens using specific tokenizer.
+2. it creates embeddings vectors for each token.
+3. it process those embeddings through some parts of the neural network layers to create 
+some better representations or rich representation of the given sequence.
+
+This phase is computationally intensive because it needs to process all input tokens at once.
+This stage is like reading an entire paragraph and understanding it before writing a summary 
+of the paragraph. 
+
+
+The Decode Phase:
+The decoding phase starts when the prefil stage ends. This is where we see the generation 
+starts. For every token in the generation, the following process occurs,
+
+
+1. compute the attention of the current token with all previous tokens. This means
+looking back at all previous tokens.
+2. compute the probablity of the next token. 
+3. the whole vocab is assigned probablity for the next token, this is where sampling is done
+as to what token should be selected.
+4. Continuation check, to decide if this is the end of the generation or it should still
+continue.
+
+The decoding phase  is also a memory intensive pocess.
+
+
+Sampling Strategies:
+how to decide which token to sample from the output probablities. different
+tokens selected will create different stream of token generation.
+
+we can control this sampling strategy.
+
+The generation continues untill it encounters [EOS] token, each model
+has a different [EOS]. For SmolLM22, the [EOS] is <|im_end|>.
+
+so in decoding step, you have the token probbality individually as well as the
+total probbably (accumulated probablities) of the whole generation.
+
+There are multiple factors which impact token selection. 
+
+Raw logits: These are gut feelings of the model about what the next token should be.
+when the model needs to choose its next token based on the given tokens,
+it starts with raw probabalities which are also called logits.
+
+there will be a raw probablity assocaited with every token in its vocab and it has to
+choose from it.
+
+Temperature Control:
+The first tool we have in our hands is called temprature scaling. above 1 means more random or creative, below 1 means less creative and more deterministic. 
+
+Top-p (Nucleus) Sampling:
+there is a long tail in output token probablities. lots of tokens will have very
+little probabailities. you want to discard that long tail first before sampling. 
+
+following steps are required.
+1. you order tokens based on the probablitoes.
+2. you keep accumulating probablities from the top untill you reach the value of 90%.
+3. you sample from the max uptil that 90% mark.
+
+This is how you discard meaningless low probablity tokens.
+
+Top K:
+You keep only the top k tokens (with highest probabilities).
+“Only allow the model to pick the next word from the top k most likely ones.”
+
+
+Key Differences betweeb Top-p and Top-K:
+| Feature          | **Top-k**                          | **Top-p (Nucleus)**                    |
+| ---------------- | ---------------------------------- | -------------------------------------- |
+| Cutoff type      | Fixed number of tokens (`k`)       | Dynamic number to cover total `p` mass |
+| Number of tokens | Always `k`                         | Varies each time                       |
+| Simplicity       | Easier to implement, deterministic | More adaptive, flexible                |
+
+
+Top P is based on probablities accumation upto lets say 90% and no matter how many tokens it 
+include.
+
+Top K always include top fixed number of tokens and you select from top fixed number of tokens.
+
+
+Managing Repetition: Keeping Output Fresh:
+
+Presence Penalty: A fixed penalty applied to any token that has appeared before, regardless of how often. 
+
+Frequency Penalty: a dyanmic or scaling Penalty based on how many times certain token appeared before.
+
+so these two techniques are used to control the appearance certain tokens.
+
+it should be noted that these penallties are applied to the raw logits, so they impact the
+logits.
+
+lets say logit is 2 for a toke, it appears twice bfore, then its raw logit is adjusted
+and say with a penalty.if penalty is for one time appearance -0.1, then for another it would 
+be -0.2.
+
+so the final logit probablity will be 2- (0.1 + 0.2) = 1.7, that;s how the raw probablity is reduced.
+
+then after this step, other samplied methods are applied.
+
+
+Controlling Generation Length: Setting Boundaries:
+how do we control the length of the generation.
+1. we set min and max token limits.
+2. Stop Sequences: Defining specific patterns or tokens that signal the end of generation
+3. End-of-Sequence Detection: Letting the model naturally conclude its response (this is what we
+usually do and is bydefault beh when we don't define min max token limit and 
+specific stop sequences)
+
+if we want to generate a single paragraph, we may add /n/n as stop sequence and define max token as 100 and min token as 10.
+
+Beam Search: Looking Ahead for Better Coherence:
+instead of single generation, we do multiple generations.
+here is it how it works.
+
+1. instead of selecting the best next token, we can select n best tokens.
+2. for each token, we contineve generating next token.
+3. multiple trees are formed in various directions.
+4. we select the path with the highest accumulative probablity or through some other criteria.
+5. stop condition of desired length condition can be used to stop generating each beam.
+
+
+Key Performance Metrics:
+Time to First Token (TTFT): as we discussed that there are two main phases in inference.
+prefill phase and decode phase.
+Time to First Token (TTFT) is mainly influced and impcted by prefill phase and its an imprtant
+factor for the llm application.
+
+Time Per Output Token (TPOT): How fast can you generate subsequent tokens? This determines the overall generation speed.
+
+Throughput: How many requests can you handle simultaneously? like in batch? batching is used 
+for this.
+
+VRAM Usage: How much GPU memory do you need? 
+
+The Context Length Challenge:
+we all want long context but there are challenges with long context in inference side.
+
+Memory Usage: Grows quadratically with context length. because of the attention 0n2 thing.
+Processing Speed: Decreases linearly with longer contexts.
+Resource Allocation: Requires careful balancing of VRAM usage like KV-cache etc.
+
+Models may provode huge context windows but that effect the inference speed alot.
+
+so if we can use small context window for simple tasks, we should use those.
+as that would be good for speed.
+
+the context length should b specific use case dependent.
+
+The KV Cache Optimization:
+KV catch is powerful to manage long context, memory optimziation and for speed.
+all the above challenges can be helped with KV cache.
+
+At each step, you:
+
+Compute Q/K/V for just 1 token
+
+Use Q to attend over all cached K/Vs
+
+Append new K/V to cache
+
+You never recompute past tokens — that’s the optimization
+
+you need a bit more memory because you have to store KV cache for previous tokes,
+KV cache grows as we predict next tokens,
+The cache typically stores tensors shaped like:
+
+K cache: [batch_size, num_heads, sequence_length, head_dim]
+V cache: [batch_size, num_heads, sequence_length, head_dim]
+
+For a model like GPT-3 with long sequences, this can consume several gigabytes of GPU memory just for the cache.
+
+
+even though unlike GPT, BERT is trained with natural data
+like English Wikipedia and BookCorpus datasets, we can still see biases in
+the  BERT model.
+When you use these tools, you therefore need to keep in the back of your mind that the original model you are using could very easily generate sexist, racist, or homophobic content. Fine-tuning the model on your data won’t make this intrinsic bias disappear
+
+
+
+
+
+
+
 
