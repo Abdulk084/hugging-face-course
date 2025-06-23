@@ -5493,3 +5493,48 @@ model = torch.compile(model)  # After FSDP wrapping
 
 ## Key Takeaway for Interviews
 FSDP is about **memory efficiency through sharding** - understand the trade-offs between memory usage, communication overhead, and complexity compared to DDP. Focus on practical implementation details like state dict management and gradient synchronization control.
+
+
+
+# Code Comparison:
+# Pure PyTorch (verbose but explicit):
+```python
+for epoch in range(num_epochs):
+    model.train()
+    for batch in train_loader:
+        optimizer.zero_grad()
+        output = model(batch['input'])
+        loss = criterion(output, batch['target'])
+        loss.backward()
+        optimizer.step()
+    
+    # Validation loop
+    model.eval()
+    with torch.no_grad():
+        for batch in val_loader:
+            # validation logic...
+    
+    # Save checkpoint
+    torch.save(model.state_dict(), f'checkpoint_{epoch}.pt')
+    # Handle early stopping, logging, etc.
+
+```
+
+# PyTorch Lightning (concise, handles boilerplate):
+```python
+class MyModel(pl.LightningModule):
+    def training_step(self, batch, batch_idx):
+        output = self(batch['input'])
+        loss = self.criterion(output, batch['target'])
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        # validation logic...
+    
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters())
+
+# Everything else (checkpointing, logging, etc.) handled automatically
+trainer = pl.Trainer(gpus=4, max_epochs=10)
+trainer.fit(model, train_loader, val_loader)
+```
