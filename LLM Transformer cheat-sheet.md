@@ -1,5 +1,7 @@
 # hugging-face-course
 
+https://damek.github.io/random/all/
+https://huggingface.co/learn/llm-course/en/chapter0/1?fw=pt
 
 chapter 1:
 pip install "transformer[sentencepiece]"
