@@ -190,13 +190,13 @@ def main_train_fsdp(rank: int, world_size: int, batch_size: int,
                 opt.zero_grad(set_to_none=True)
             
             # Control gradient synchronization
-            ctx = model.no_sync() if step % accum < (accum - 1) else contextlib.nullcontext()
             
-            with ctx:
-                with autocast("cuda"):
-                    output = model(**inp, labels=labels)
-                loss = output.loss * (1 / accum)
-                scaler.scale(loss).backward()
+            
+            
+            with autocast("cuda"):
+                output = model(**inp, labels=labels)
+            loss = output.loss * (1 / accum)
+            scaler.scale(loss).backward()
 
             # Update on last accumulation step
             if step % accum == (accum - 1):
